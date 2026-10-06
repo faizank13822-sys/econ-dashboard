@@ -215,3 +215,46 @@ if info["id"] in ("CPIAUCSL", "CPILFESL"):
     st.subheader("Inflation rate (year over year, %)")
     st.altair_chart(make_chart(inflation), use_container_width=True)
     st.write("This compares each month to the same month one year earlier. If it says 3, prices are 3 percent higher than a year ago.")
+
+st.divider()
+st.header("Compare two indicators")
+
+names = list(INDICATORS)
+a_name = st.selectbox("First indicator", names, index=0, key="cmp_a")
+b_name = st.selectbox("Second indicator", names, index=1, key="cmp_b")
+cmp_years = st.slider("Years to compare", 1, 40, 15, key="cmp_years")
+
+if a_name == b_name:
+    st.warning("Pick two different indicators.")
+else:
+    a = load(INDICATORS[a_name]["id"])
+    b = load(INDICATORS[b_name]["id"])
+    both = pd.concat([a.rename(a_name), b.rename(b_name)], axis=1)
+    both = both.resample("MS").mean().dropna()
+    both = both[both.index >= both.index.max() - pd.DateOffset(years=cmp_years)]
+
+    if len(both) > 1:
+        both.index.name = "date"
+        indexed = both / both.iloc[0] * 100
+        long = indexed.reset_index().melt("date", var_name="Indicator", value_name="Index")
+
+        lo, hi = long["date"].min(), long["date"].max()
+        recs = clip_bands(get_recessions(), lo, hi)
+
+        shade = (
+            alt.Chart(recs)
+            .mark_rect(color="red", opacity=0.2)
+            .encode(x="start:T", x2="end:T")
+        )
+        lines = (
+            alt.Chart(long)
+            .mark_line()
+            .encode(
+                x=alt.X("date:T", title=None),
+                y=alt.Y("Index:Q", title="Index (start = 100)", scale=alt.Scale(zero=False)),
+                color="Indicator:N",
+                tooltip=["date:T", "Indicator:N", "Index:Q"],
+            )
+        )
+        st.altair_chart((shade + lines).properties(height=350), use_container_width=True)
+        st.caption("Both lines start at 100 so you can compare how much each one moved. Two lines moving together does not mean one causes the other.")
